@@ -65,7 +65,7 @@ Nerua/
 
 **1. Clone the repository**
 ```bash
-git clone https://github.com/<your-username>/nerua.git
+https://github.com/SumitdevelopAI/neura.git
 cd nerua
 ```
 

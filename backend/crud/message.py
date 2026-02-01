@@ -2,7 +2,13 @@ from sqlalchemy.orm import Session
 from app.models import Message
 
 
-def create_message(db, chat_id, user_id, role, content):
+def create_message(
+    db: Session,
+    chat_id: int,
+    user_id: str,
+    role: str,
+    content: str
+):
     msg = Message(
         chat_id=chat_id,
         user_id=user_id,
@@ -15,13 +21,13 @@ def create_message(db, chat_id, user_id, role, content):
     return msg
 
 
-def get_messages(db, chat_id, user_id):
+def get_messages(db: Session, chat_id: int, user_id: str):
     return (
         db.query(Message)
         .filter(
             Message.chat_id == chat_id,
             Message.user_id == user_id
         )
-        .order_by(Message.created_at)
+        .order_by(Message.created_at.asc())
         .all()
     )

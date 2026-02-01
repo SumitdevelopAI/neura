@@ -1,243 +1,184 @@
 import streamlit as st
-from datetime import datetime
-# Assuming api.py exists in your directory
-from api import create_chat, get_chat
+import time
+import uuid
 
-# Page configuration
+# ---------------- CONFIGURATION ----------------
 st.set_page_config(
     page_title="Neural Ledger",
-    page_icon="✨",
+    page_icon="static/favicon.png", # Use a local file or standard emoji if needed
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- GEMINI-INSPIRED CSS ---
+# ---------------- IMPORT API ----------------
+try:
+    from api import create_chat, send_message, get_messages
+except ImportError:
+    st.error("⚠️ 'api.py' not found.")
+    st.stop()
+
+# ---------------- CSS (Minimal & Clean) ----------------
 st.markdown("""
-<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-
 <style>
-    /* Global Settings */
-    * {
-        font-family: 'Inter', sans-serif;
+    /* 1. Global Font - System Standard */
+    html, body, [class*="css"] {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
-    
-    .stApp {
-        background-color: #ffffff;
+
+    /* 2. Google-style Loading Animation */
+    .typing-indicator {
+        display: inline-flex;
+        align-items: center;
+        margin-left: 0px; 
+        padding: 8px 0;
     }
+    .dot {
+        width: 6px;
+        height: 6px;
+        margin: 0 3px;
+        background-color: #5f6368;
+        border-radius: 50%;
+        animation: bounce 1.4s infinite ease-in-out both;
+    }
+    .dot:nth-child(1) { animation-delay: -0.32s; background-color: #4285F4; } /* Blue */
+    .dot:nth-child(2) { animation-delay: -0.16s; background-color: #EA4335; } /* Red */
+    .dot:nth-child(3) { animation-delay: 0s;     background-color: #FBBC05; } /* Yellow */
     
-    /* Hide Default Streamlit Elements */
-    #MainMenu, footer, header {visibility: hidden;}
-    
-    /* SIDEBAR STYLING */
+    @keyframes bounce {
+        0%, 80%, 100% { transform: scale(0); }
+        40% { transform: scale(1); }
+    }
+
+    /* 3. Sidebar Polish */
     [data-testid="stSidebar"] {
-        background-color: #f0f4f9;
-        border-right: none;
+        background-color: #f8f9fa;
+        border-right: 1px solid #e9ecef;
     }
     
-    /* Sidebar New Chat Button */
-    [data-testid="stSidebar"] .stButton button {
-        background-color: #dde3ea;
-        color: #1f1f1f;
-        border: none;
-        border-radius: 24px;
-        padding: 0.75rem 1.5rem;
-        font-weight: 500;
-        font-size: 14px;
-        width: 100%;
-        text-align: left;
-        display: flex;
-        align-items: center;
-        justify-content: flex-start;
+    /* 4. Chat Bubble Spacing */
+    .stChatMessage {
+        gap: 1rem;
     }
-    
-    [data-testid="stSidebar"] .stButton button:hover {
-        background-color: #cdd6e0;
-        color: #000;
-    }
-
-    /* HEADER */
-    .app-header {
-        padding: 1rem 0;
-        margin-bottom: 1rem;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-    
-    .logo-text {
-        font-size: 22px;
-        font-weight: 600;
-        background: linear-gradient(90deg, #4285F4, #9B72CB, #D96570);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-
-    /* CHAT MESSAGES */
-    .chat-container {
-        margin-bottom: 80px; /* Space for the bottom input bar */
-    }
-
-    /* Message Bubbles */
-    .user-msg-container {
-        display: flex;
-        justify-content: flex-end;
-        margin-bottom: 20px;
-    }
-    
-    .user-bubble {
-        background-color: #f0f4f9;
-        color: #1f1f1f;
-        padding: 12px 20px;
-        border-radius: 24px;
-        max-width: 80%;
-        font-size: 16px;
-        line-height: 1.5;
-    }
-
-    .ai-msg-container {
-        display: flex;
-        gap: 12px;
-        margin-bottom: 20px;
-        align-items: flex-start;
-    }
-    
-    .ai-icon {
-        color: #4285F4;
-        margin-top: 4px;
-    }
-    
-    .ai-text {
-        color: #1f1f1f;
-        font-size: 16px;
-        line-height: 1.6;
-        padding-top: 2px;
-    }
-
-    /* EMPTY STATE */
-    .empty-state {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 60vh;
-        text-align: center;
-        opacity: 0.8;
-    }
-    
-    .empty-state h3 {
-        font-weight: 500;
-        font-size: 24px;
-        margin-top: 10px;
-        background: linear-gradient(90deg, #4285F4, #D96570);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state
-if "chat_id" not in st.session_state:
-    st.session_state.chat_id = None
+# ---------------- STATE ----------------
+if "user_id" not in st.session_state:
+    st.session_state.user_id = str(uuid.uuid4())
+if "current_chat_id" not in st.session_state:
+    st.session_state.current_chat_id = None
+if "chat_history_list" not in st.session_state:
+    st.session_state.chat_history_list = []
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-# --- SIDEBAR ---
+# ---------------- LOGIC ----------------
+
+def stream_text(text):
+    """Smooth text streaming"""
+    if not text: text = "..."
+    for i in range(0, len(text), 3):
+        yield text[i:i+3]
+        time.sleep(0.008)
+
+# ---------------- SIDEBAR ----------------
 with st.sidebar:
-    st.markdown("### New Conversation")
+    st.title("Neural Ledger")
     
-    # Input for creating a specific named chat
-    new_chat_title = st.text_input("Topic", placeholder="Chat Topic...", label_visibility="collapsed")
-    
-    if st.button("＋ Create New Chat"):
-        if new_chat_title.strip():
-            try:
-                chat = create_chat(new_chat_title)
-                st.session_state.chat_id = chat["id"]
+    if st.button("＋ New Conversation", type="primary", use_container_width=True):
+        st.session_state.current_chat_id = None
+        st.session_state.messages = []
+        st.rerun()
+
+    st.markdown("### Recent")
+    if st.session_state.chat_history_list:
+        for chat in reversed(st.session_state.chat_history_list):
+            if st.button(chat['title'][:25], key=chat['id'], use_container_width=True):
+                st.session_state.current_chat_id = chat['id']
+                # Load msgs logic
+                try:
+                    msgs = get_messages(chat['id'], st.session_state.user_id)
+                    st.session_state.messages = msgs if isinstance(msgs, list) else []
+                except:
+                    st.session_state.messages = []
                 st.rerun()
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
-    
-    st.markdown("---")
-    
-    if st.session_state.chat_id:
-        st.caption(f"Active Chat ID: {st.session_state.chat_id}")
-        if st.button("Reset / Clear"):
-            st.session_state.chat_id = None
-            st.rerun()
 
-# --- MAIN CONTENT ---
-col1, col2, col3 = st.columns([1, 10, 1])
+# ---------------- MAIN CHAT ----------------
 
-with col2:
-    # Header
+# 1. MESSAGES DISPLAY
+# Note: By NOT passing the 'avatar=' argument, Streamlit uses its 
+# standard, professional vector icons automatically.
+if st.session_state.messages:
+    for msg in st.session_state.messages:
+        role = msg.get("role", "assistant")
+        content = msg.get("content", "")
+        
+        with st.chat_message(role):
+            st.markdown(content)
+
+# 2. EMPTY STATE
+else:
     st.markdown("""
-        <div class='app-header'>
-            <span class="material-icons-outlined" style="font-size: 28px; color: #4285F4;">auto_awesome</span>
-            <span class="logo-text">Neural Ledger</span>
-        </div>
+    <div style="text-align: center; margin-top: 15vh; opacity: 0.6;">
+        <h2 style="font-weight: 500;">How can I help you today?</h2>
+    </div>
     """, unsafe_allow_html=True)
 
-    # Chat Logic
-    if st.session_state.chat_id:
+# 3. INPUT HANDLING
+prompt = st.chat_input("Message Neural Ledger...")
+
+if prompt:
+    # A. User Message
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # B. Init Chat ID (Lazy)
+    if not st.session_state.current_chat_id:
         try:
-            chat = get_chat(st.session_state.chat_id)
-            messages = chat.get("messages", [])
-            
-            if messages:
-                for msg in messages:
-                    role = msg.get("role", "user")
-                    content = msg.get("content", "")
-                    
-                    if role == "user":
-                        st.markdown(f"""
-                            <div class="user-msg-container">
-                                <div class="user-bubble">{content}</div>
-                            </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"""
-                            <div class="ai-msg-container">
-                                <span class="material-icons-outlined ai-icon">auto_awesome</span>
-                                <div class="ai-text">{content}</div>
-                            </div>
-                        """, unsafe_allow_html=True)
-            else:
-                 st.markdown("""
-                    <div class='empty-state'>
-                        <h3>Hello, human</h3>
-                        <p style="color: #666;">I'm ready to help.</p>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-        except Exception as e:
-            st.error(f"Error loading chat: {e}")
-    else:
-        # Welcome Screen (No ID selected)
-        st.markdown("""
-            <div class='empty-state'>
-                <span class="material-icons-outlined" style="font-size: 48px; color: #4285F4;">psychology</span>
-                <h3>Welcome to Neural Ledger</h3>
-                <p style="color: #666;">Type a message below to start.</p>
+            new_chat = create_chat(prompt[:30])
+            st.session_state.current_chat_id = new_chat["id"]
+            st.session_state.chat_history_list.append(new_chat)
+        except:
+            st.stop()
+
+    # C. Assistant Response
+    with st.chat_message("assistant"):
+        # The loading animation inside the bubble
+        placeholder = st.empty()
+        placeholder.markdown("""
+            <div class="typing-indicator">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
             </div>
         """, unsafe_allow_html=True)
-
-# --- INPUT AREA (Fixed at bottom) ---
-# st.chat_input handles the sticky bottom bar automatically
-user_query = st.chat_input("Enter a prompt here")
-
-if user_query:
-    if not st.session_state.chat_id:
-        # If no chat exists, create one automatically
+        
         try:
-            # Create a generic chat or use the first message as title
-            chat = create_chat(user_query[:30]) 
-            st.session_state.chat_id = chat["id"]
-            # Ideally, you would also post the message to the API here
-            # e.g., post_message(chat['id'], user_query)
-            st.rerun()
-        except Exception as e:
-            st.error(f"Could not create chat: {e}")
-    else:
-        # If chat exists, handle sending the message
-        # e.g., post_message(st.session_state.chat_id, user_query)
-        st.write(f"User sent: {user_query}") # Placeholder for your API logic
+            # API Call
+            api_response = send_message(
+                chat_id=st.session_state.current_chat_id,
+                user_id=st.session_state.user_id,
+                content=prompt
+            )
+
+            # Smart Content Extraction
+            final_content = ""
+            if isinstance(api_response, list) and api_response:
+                final_content = api_response[-1].get("content", "")
+            elif isinstance(api_response, dict):
+                 if api_response.get("role") == "assistant":
+                    final_content = api_response.get("content", "")
+                 elif api_response.get("role") == "user":
+                    updated = get_messages(st.session_state.current_chat_id, st.session_state.user_id)
+                    if updated: final_content = updated[-1]["content"]
+
+            # Output
+            if final_content:
+                placeholder.write_stream(stream_text(final_content))
+                st.session_state.messages.append({"role": "assistant", "content": final_content})
+            else:
+                placeholder.error("No response.")
+
+        except Exception:
+            placeholder.error("Connection failed.")

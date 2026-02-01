@@ -1,18 +1,28 @@
 import requests
 
-API_BASE_URL = "http://127.0.0.1:8000"
+API = "http://127.0.0.1:8000"
+
 
 def create_chat(title: str):
-    response = requests.post(
-        f"{API_BASE_URL}/chats",
-        json={"title": title}
-    )
-    response.raise_for_status()
-    return response.json()
+    r = requests.post(f"{API}/chats/", json={"title": title})
+    r.raise_for_status()
+    return r.json()
 
-def get_chat(chat_id: int):
-    response = requests.get(
-        f"{API_BASE_URL}/chats/{chat_id}"
+
+def get_messages(chat_id: int, user_id: str):
+    r = requests.get(f"{API}/messages/{chat_id}/{user_id}")
+    r.raise_for_status()
+    return r.json()
+
+
+def send_message(chat_id: int, user_id: str, content: str):
+    r = requests.post(
+        f"{API}/messages/{chat_id}",
+        json={
+            "user_id": user_id,
+            "role": "user",
+            "content": content
+        }
     )
-    response.raise_for_status()
-    return response.json()
+    r.raise_for_status()
+    return r.json()

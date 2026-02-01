@@ -1,36 +1,32 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from typing import Optional
 from datetime import datetime
 
-
-# -------------------
-# CHAT SCHEMAS
-# -------------------
-
-class ChatCreate(BaseModel):
+class ChatBase(BaseModel):
     title: str
 
+class ChatCreate(ChatBase):
+    pass
 
-class ChatOut(ChatCreate):
+class ChatOut(ChatBase):
     id: int
     created_at: datetime
-
+    # This allows the schema to read data from SQLAlchemy models
     class Config:
         from_attributes = True
 
-
-# -------------------
-# MESSAGE SCHEMAS
-# -------------------
-
 class MessageCreate(BaseModel):
     user_id: str
-    role: str = Field(..., pattern="^(user|assistant|system)$")
+    role: str
     content: str
 
-
-class MessageOut(MessageCreate):
+class MessageOut(BaseModel):
     id: int
-    created_at: datetime
+    chat_id: int
+    user_id: str
+    role: str
+    content: str
+    timestamp: Optional[datetime] = None
 
     class Config:
         from_attributes = True
